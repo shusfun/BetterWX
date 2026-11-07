@@ -72,7 +72,7 @@ pub fn previous(target: &Path) -> Result<Option<PathBuf>> {
         return Ok(None);
     };
     for file in &versions[current + 1..] {
-        if file.with_added_extension("bak").try_exists()? {
+        if crate::store::Store::backup_exists(file)? {
             return Ok(Some(file.clone()));
         }
     }

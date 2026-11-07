@@ -1,36 +1,4 @@
-mod appex;
-mod browser;
-mod coexist;
-mod credentials;
-mod data;
-mod dialog;
-mod emoticon;
-mod feature;
-mod icon;
-mod image;
-mod inherit;
-mod install;
-mod instance;
-mod login;
-mod notify;
-mod probe;
-#[cfg(windows)]
-mod process;
-mod progress;
-mod qrc;
-mod remote;
-mod resources;
-mod revoke;
-mod sound;
-mod store;
-mod time;
-mod timestamps;
-mod tray;
-mod tui;
-mod uia;
-mod updates;
-mod writable;
-mod xlog;
+use betterwx::{coexist, feature, icon, inherit, install, progress, sound, store, tui};
 
 use std::{env, error::Error, path::PathBuf, process::ExitCode};
 

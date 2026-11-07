@@ -1,0 +1,33 @@
+{
+  "name": "betterwx-desktop",
+  "version": "2.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 15731 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "lint": "eslint ui",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev --config desktop/tauri.conf.json",
+    "desktop:build": "tauri build --config desktop/tauri.conf.json --no-bundle",
+    "release:manifest": "node scripts/release-manifest.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@tauri-apps/cli": "^2.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^6.0.0"
+  }
+}

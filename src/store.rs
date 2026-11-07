@@ -6,9 +6,10 @@ use std::{
     sync::Arc,
 };
 
+use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
-use crate::{Result, data::Data, install, progress::Progress};
+use crate::{Result, data::Data, progress::Progress};
 
 pub struct Store {
     pub target: PathBuf,
@@ -18,6 +19,7 @@ pub struct Store {
 pub struct File {
     pub target: PathBuf,
     backup: PathBuf,
+    legacy_backup: PathBuf,
     pub current: Data,
     pub original: Arc<Vec<u8>>,
     pub enabled: BTreeMap<String, usize>,
@@ -93,7 +95,15 @@ fn write_parts<'a>(
     }
     temporary.as_file().sync_all()?;
     progress.check()?;
-    temporary.persist(path)?;
+    match temporary.persist(path) {
+        Ok(_) => {}
+        Err(error) if error.error.kind() == std::io::ErrorKind::CrossesDevices => {
+            let source = error.file.path().to_owned();
+            fs::copy(&source, path)?;
+            error.file.close()?;
+        }
+        Err(error) => return Err(error.error.into()),
+    }
     step.finish(format!("{name}；{size} 字节"));
     Ok(())
 }
@@ -169,25 +179,18 @@ impl Store {
     pub fn load(&mut self, target: &Path, progress: &Progress) -> Result<&File> {
         let target = fs::canonicalize(target)?;
         let backup = self.backup(&target)?;
+        let legacy_backup = legacy_backup_path(&target);
         Ok(match self.files.entry(target) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
-                let file = File::open(entry.key(), backup, progress)?;
+                let file = File::open(entry.key(), backup, legacy_backup, progress)?;
                 entry.insert(file)
             }
         })
     }
 
     fn backup(&self, target: &Path) -> Result<PathBuf> {
-        let directory = target.parent().ok_or("目标文件缺少父目录")?;
-        if Some(directory) == self.target.parent() {
-            return Ok(target.with_added_extension("bak"));
-        }
-        let name = target.file_name().ok_or("目标文件缺少名称")?;
-        Ok(directory
-            .join(install::version(target)?)
-            .join(name)
-            .with_added_extension("bak"))
+        backup_path(target)
     }
 
     pub fn write_error(&self, targets: &[PathBuf]) -> Option<String> {
@@ -202,11 +205,19 @@ impl Store {
 
     pub fn load_backups(&mut self, targets: &[PathBuf], progress: &Progress) -> Result<()> {
         for target in targets {
-            if target.try_exists()? && self.backup(target)?.try_exists()? {
+            if target.try_exists()? && backup_exists_for(target)? {
                 self.load(target, progress)?;
             }
         }
         Ok(())
+    }
+
+    pub fn backup_path(target: &Path) -> Result<PathBuf> {
+        backup_path(target)
+    }
+
+    pub fn backup_exists(target: &Path) -> Result<bool> {
+        backup_exists_for(target)
     }
 
     pub fn changed(&self) -> Vec<PathBuf> {
@@ -270,15 +281,85 @@ impl Store {
     }
 }
 
+fn backup_path(target: &Path) -> Result<PathBuf> {
+    let target = normalized_target(target);
+    let root = backup_root();
+    let name = target.file_name().ok_or("目标文件缺少名称")?;
+    Ok(root
+        .join(target_id(&target))
+        .join(name)
+        .with_added_extension("bak"))
+}
+
+fn legacy_backup_path(target: &Path) -> PathBuf {
+    target.with_added_extension("bak")
+}
+
+fn normalized_target(target: &Path) -> PathBuf {
+    fs::canonicalize(target).unwrap_or_else(|_| target.to_owned())
+}
+
+fn backup_exists_for(target: &Path) -> Result<bool> {
+    Ok(backup_path(target)?.try_exists()? || legacy_backup_path(target).try_exists()?)
+}
+
+fn target_id(target: &Path) -> String {
+    let normalized = target.to_string_lossy().replace('\\', "/");
+    #[cfg(windows)]
+    let normalized = normalized.to_ascii_lowercase();
+    Sha256::digest(normalized.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn backup_root() -> PathBuf {
+    #[cfg(windows)]
+    let base = std::env::var_os("LOCALAPPDATA")
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(|home| PathBuf::from(home).join("AppData/Local").into_os_string())
+        })
+        .unwrap_or_else(|| PathBuf::from(".").into_os_string());
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME")
+        .map(|home| {
+            PathBuf::from(home)
+                .join("Library/Application Support")
+                .into_os_string()
+        })
+        .unwrap_or_else(|| PathBuf::from(".").into_os_string());
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|home| PathBuf::from(home).join(".local/share").into_os_string())
+        })
+        .unwrap_or_else(|| PathBuf::from(".").into_os_string());
+    PathBuf::from(base).join("BetterWX").join("backups")
+}
+
 impl File {
     pub fn backed_up(&self) -> Result<bool> {
-        Ok(self.backup.try_exists()?)
+        Ok(self.backup.try_exists()? || self.legacy_backup.try_exists()?)
     }
 
-    fn open(target: &Path, backup: PathBuf, progress: &Progress) -> Result<Self> {
+    fn open(
+        target: &Path,
+        backup: PathBuf,
+        legacy_backup: PathBuf,
+        progress: &Progress,
+    ) -> Result<Self> {
         let mut source_issue = None;
-        let (original, current) = if backup.try_exists()? {
-            let original = Arc::new(read(&backup, progress, "载入文件")?);
+        let source_backup = if backup.try_exists()? {
+            Some(backup.as_path())
+        } else if legacy_backup.try_exists()? {
+            Some(legacy_backup.as_path())
+        } else {
+            None
+        };
+        let (original, current) = if let Some(source_backup) = source_backup {
+            let original = Arc::new(read(source_backup, progress, "载入文件")?);
             let mut file = fs::File::open(target)?;
             let mut current = Data::default();
             let mut buffer = vec![0; 1024 * 1024];
@@ -325,6 +406,7 @@ impl File {
         Ok(Self {
             target: target.to_owned(),
             backup,
+            legacy_backup,
             current,
             original,
             enabled: BTreeMap::new(),

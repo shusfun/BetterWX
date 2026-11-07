@@ -1,2 +1,7 @@
 /target/
 *.bak
+/node_modules/
+/dist/
+/release/
+/desktop/gen/
+/desktop/icons/

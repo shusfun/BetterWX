@@ -1,0 +1,10 @@
+import { generateKeyPairSync } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+const [privatePath, publicPath] = process.argv.slice(2);
+if (!privatePath || !publicPath) throw new Error('Usage: node scripts/generate-update-key.mjs <private.pem outside repo> <public.txt>');
+const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+mkdirSync(dirname(resolve(privatePath)), { recursive: true });
+writeFileSync(privatePath, privateKey.export({ type: 'pkcs8', format: 'pem' }), { flag: 'wx', mode: 0o600 });
+writeFileSync(publicPath, publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64') + '\n', { flag: 'wx' });
+console.log('Created public key; private key stays at the specified private path.');

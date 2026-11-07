@@ -28,6 +28,10 @@ impl Data {
             .map_or(0, |part| part.offset + part.range.len())
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.parts.is_empty()
+    }
+
     pub fn push(&mut self, data: Arc<Vec<u8>>, range: Range<usize>) {
         if range.is_empty() {
             return;

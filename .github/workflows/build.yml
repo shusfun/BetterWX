@@ -2,12 +2,8 @@ name: Build
 
 on:
   push:
-    tags: ["**"]
+    tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Release Tag
-        type: string
 
 permissions:
   contents: write
@@ -17,16 +13,41 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: cargo test --workspace --locked
+      - run: pnpm desktop:build
+      - run: cargo build --release --locked -p betterwx
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item target/release/BetterWX-Desktop.exe release/BetterWX.exe
+          Copy-Item target/release/betterwx.exe release/betterwx-cli.exe
       - uses: actions/upload-artifact@v7
         with:
           name: betterwx-windows-x64
-          path: target/release/betterwx.exe
+          path: release/*.exe
+      - name: Sign update manifest
+        if: github.ref_type == 'tag'
+        run: pnpm release:manifest
+        env:
+          BETTERWX_UPDATE_PRIVATE_KEY: ${{ secrets.BETTERWX_UPDATE_PRIVATE_KEY }}
       - uses: softprops/action-gh-release@v3
-        if: github.event_name == 'push' || inputs.release_tag != ''
+        if: github.ref_type == 'tag'
         with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
-          target_commitish: ${{ github.sha }}
           draft: true
-          files: target/release/betterwx.exe
+          generate_release_notes: true
+          files: |
+            release/BetterWX.exe
+            release/betterwx-cli.exe
+            release/update.json
+            release/update.json.sig

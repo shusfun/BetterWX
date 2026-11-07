@@ -1,0 +1,35 @@
+pub mod appex;
+pub mod browser;
+pub mod coexist;
+pub mod credentials;
+pub mod data;
+pub mod dialog;
+pub mod emoticon;
+pub mod feature;
+pub mod icon;
+pub mod image;
+pub mod inherit;
+pub mod install;
+pub mod instance;
+pub mod login;
+pub mod notify;
+pub mod probe;
+#[cfg(windows)]
+pub mod process;
+pub mod progress;
+pub mod qrc;
+pub mod remote;
+pub mod resources;
+pub mod revoke;
+pub mod sound;
+pub mod store;
+pub mod time;
+pub mod timestamps;
+pub mod tray;
+pub mod tui;
+pub mod uia;
+pub mod updates;
+pub mod writable;
+pub mod xlog;
+
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
